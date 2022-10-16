@@ -1,0 +1,183 @@
+---
+title: "Casos Dengue - Brasil"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: 'cerulean'
+    orientation: rows
+    vertical_layout: fill
+#runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(microdatasus)
+library(ggplot2)
+library(plotly)
+library(geobr)
+library(sf)
+library(rjson)
+library(DT)
+library(dplyr)
+# Install thematic and un-comment for themed static plots (i.e., ggplot2)
+# thematic::thematic_rmd()
+load(file = "casos-dengue-brasil-data.RData") 
+if (!"dados" %in% ls(envir = .GlobalEnv)) {  
+  dados <- fetch_datasus(year_start = 2021, year_end = 2021, uf = "all", information_system = "SINAN-DENGUE-PRELIMINAR")
+  # process_sinan_dengue inconsistente. Comentado.
+  # dados <- process_sinan_dengue(dados)
+} else {
+  dados = get("dados", envir = .GlobalEnv)
+}
+if (!"mapaBrasil" %in% ls(envir = .GlobalEnv)) {  
+  print("Recarregando mapa...")
+  mapaBrasil <- geobr::read_state(code_state="all", year=2020)
+  estados <- rjson::fromJSON(file="./brasil.geojson")
+  populacao = geobr::read_pop_arrangements()
+} else {  
+  print("Reutilizando mapa...")
+  mapaBrasil = get("mapaBrasil", envir = .GlobalEnv)
+  estados = get("estados", envir = .GlobalEnv)
+  populacao = get("populacao", envir = .GlobalEnv)
+}
+renomear <- function(rowName) {
+  dicionarioClassificacaoFinal <- c("5"="Descartado", "10" = "Dengue", "11" = "Dengue com sinais de alarme", "12" = "Dengue Grave", "13" =  "Chikungunya", "8" = "Inconclusivo")
+  dicionarioClassificacaoFinal[rowName]
+}
+
+renomearUF <- function(codigoUf) {
+  dicionarioUF <- c(
+    "12" = "AC",
+    "27" = "AL",
+    "13" = "AM",
+    "16" = "AP",
+    "29" = "BA",
+    "23" = "CE",
+    "53" = "DF",
+    "32" = "ES",
+    "52" = "GO",
+    "21" = "MA",
+    "31" = "MG",
+    "50" = "MS",
+    "51" = "MT",
+    "15" = "PA",
+    "25" = "PB",
+    "26" = "PE",
+    "22" = "PI",
+    "41" = "PR",
+    "33" = "RJ",
+    "24" = "RN",
+    "11" = "RO",
+    "14" = "RR",
+    "43" = "RS",
+    "42" = "SC",
+    "28" = "SE",
+    "35" = "SP",
+    "17" = "TO"
+  )
+  dicionarioUF[codigoUf]
+}
+
+extrairPopulacao <- function(codigoUf) {
+  x = populacaoPorEstado %>% dplyr::filter(code_state==codigoUf)
+  as.data.frame(x)$pop_total_2010
+}
+
+# Dados para values box
+tabelaClassificacaoFinal = table(dados$CLASSI_FIN)
+dfClassificacao <- cbind(freq = tabelaClassificacaoFinal)
+colnames(dfClassificacao) <- c("Quantidade")
+rownames(dfClassificacao) = sapply(rownames(dfClassificacao), renomear)
+
+# Populacao
+
+populacaoPorEstado = populacao %>% 
+  group_by(code_state) %>% 
+  summarise(pop_total_2010 = sum(pop_total_2010))
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+### Chart A
+
+```{r}
+dengueComSinalAlarme = dfClassificacao["Dengue", "Quantidade"]
+flexdashboard::valueBox(format(as.numeric(dengueComSinalAlarme), big.mark="."), "Dengue")
+```
+
+### Chart B
+
+```{r}
+dengueComSinalAlarme = dfClassificacao["Dengue com sinais de alarme", "Quantidade"]
+flexdashboard::valueBox(format(as.numeric(dengueComSinalAlarme), big.mark="."), "Dengue com sinais de alarme")
+```
+
+### Chart C
+
+```{r}
+dengueComSinalAlarme = dfClassificacao["Dengue Grave", "Quantidade"]
+flexdashboard::valueBox(format(as.numeric(dengueComSinalAlarme), big.mark="."), "Dengue Grave")
+```
+
+### Chart D
+
+```{r}
+dengueComSinalAlarme = dfClassificacao["Inconclusivo", "Quantidade"]
+flexdashboard::valueBox(format(as.numeric(dengueComSinalAlarme), big.mark="."), "Inconclusivo")
+```
+
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Casos confirmados por UF
+
+```{r}
+tabelaClassificacaoPorEstado = table(dados$SG_UF_NOT, dados$CLASSI_FIN)
+uf = sapply(rownames(tabelaClassificacaoPorEstado), renomearUF)
+confirmados = tabelaClassificacaoPorEstado[,"10"]
+populacoes = sapply(rownames(tabelaClassificacaoPorEstado), extrairPopulacao)
+percentual = confirmados/populacoes*100
+confirmadosPorEstado = as.data.frame(
+  cbind(uf=uf,
+  confirmados=confirmados,
+  populacoes=populacoes,
+  percentual=percentual))
+
+confirmadosPorEstado$confirmados = as.numeric(confirmadosPorEstado$confirmados)
+
+colnames(confirmadosPorEstado) <- c("UF", "Confirmados", "População", "% da população")
+
+DT::datatable(confirmadosPorEstado, rownames= FALSE, options = list(
+  bFilter = FALSE,
+  bPaginate = FALSE,
+  order = list(list(3, 'desc'))
+))
+
+#populacao = geobr::read_pop_arrangements()
+#mapa <- ggplot2::ggplot(mapaBrasil) + ggplot2::geom_sf(aes()) 
+#map <- ggplotly(mapa)
+#map
+
+# fig <- plot_ly() 
+# fig <- fig %>% add_trace(
+#     type="choroplethmapbox",
+#     geojson=estados,
+#     locations=rownames(confirmadosPorEstado),
+#     z=as.data.frame(confirmadosPorEstado)$confirmados,
+#     colorscale="Viridis",
+#     zmin=min(confirmadosPorEstado),
+#     zmax=max(confirmadosPorEstado),
+#     marker=list(line=list(
+#       width=0),
+#       opacity=0.5
+#     )
+#   )
+# fig <- fig %>% layout(
+#     mapbox=list(
+#       style="carto-positron",
+#       zoom =2,
+#       center=list(lon= -95.71, lat=37.09))
+#   )
+# fig
+```
+
