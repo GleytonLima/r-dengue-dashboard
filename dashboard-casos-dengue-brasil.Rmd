@@ -18,9 +18,12 @@ library(sf)
 library(rjson)
 library(DT)
 library(dplyr)
+library(leaflet)
+library(viridis)
+
 # Install thematic and un-comment for themed static plots (i.e., ggplot2)
 # thematic::thematic_rmd()
-load(file = "casos-dengue-brasil-data.RData") 
+load(file = "dashboard-casos-dengue-brasil.RData") 
 if (!"dados" %in% ls(envir = .GlobalEnv)) {  
   dados <- fetch_datasus(year_start = 2021, year_end = 2021, uf = "all", information_system = "SINAN-DENGUE-PRELIMINAR")
   # process_sinan_dengue inconsistente. Comentado.
@@ -152,32 +155,32 @@ DT::datatable(confirmadosPorEstado, rownames= FALSE, options = list(
   bPaginate = FALSE,
   order = list(list(3, 'desc'))
 ))
-
-#populacao = geobr::read_pop_arrangements()
-#mapa <- ggplot2::ggplot(mapaBrasil) + ggplot2::geom_sf(aes()) 
-#map <- ggplotly(mapa)
-#map
-
-# fig <- plot_ly() 
-# fig <- fig %>% add_trace(
-#     type="choroplethmapbox",
-#     geojson=estados,
-#     locations=rownames(confirmadosPorEstado),
-#     z=as.data.frame(confirmadosPorEstado)$confirmados,
-#     colorscale="Viridis",
-#     zmin=min(confirmadosPorEstado),
-#     zmax=max(confirmadosPorEstado),
-#     marker=list(line=list(
-#       width=0),
-#       opacity=0.5
-#     )
-#   )
-# fig <- fig %>% layout(
-#     mapbox=list(
-#       style="carto-positron",
-#       zoom =2,
-#       center=list(lon= -95.71, lat=37.09))
-#   )
-# fig
 ```
+### Casos confirmados por UF - Mapa
 
+```{r}
+mapa <- read_state(showProgress = FALSE)
+geo <- st_as_sf(mapa)%>%
+  st_transform(4326)
+
+dados_final <- left_join(geo, confirmadosPorEstado, by = c("abbrev_state" = "UF"))
+
+cores <- colorNumeric(palette = "Blues", domain = confirmadosPorEstado$percentual)
+
+leaflet(confirmadosPorEstado) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(data = dados_final,
+              smoothFactor = 0.5,
+              fillOpacity = 0.5,
+              weight = 0.5,
+              color = ~cores(percentual),
+              opacity = 0.8,
+              highlightOptions = highlightOptions(color = "white",
+                                                  weight = 2,
+                                                  bringToFront = TRUE),
+              popup = ~paste0(sep = " ",
+                              "<b>Estado: </b>", name_state, "<br>",
+                              "<b>Confirmados: </b>", confirmados,
+                              "<b>Percentual: </b>", percentual),
+              label = ~name_state) 
+```
